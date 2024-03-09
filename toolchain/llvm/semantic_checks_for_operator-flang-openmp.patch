@@ -1,0 +1,83 @@
+diff --git a/flang/lib/Semantics/check-omp-structure.cpp b/flang/lib/Semantics/check-omp-structure.cpp
+--- a/flang/lib/Semantics/check-omp-structure.cpp
++++ b/flang/lib/Semantics/check-omp-structure.cpp
+@@ -1532,6 +1532,16 @@
+               }
+             }
+           },
++          [&](const parser::Expr::DefinedUnary &) {
++            context_.Say(expr.source,
++                "User defined operator not allowed in"
++                " OpenMP ATOMIC (UPDATE) statement"_err_en_US);
++          },
++          [&](const parser::Expr::DefinedBinary &) {
++            context_.Say(expr.source,
++                "User defined operator not allowed in"
++                " OpenMP ATOMIC (UPDATE) statement"_err_en_US);
++          },
+           [&](const auto &x) {
+             if (!IsOperatorValid(x, var)) {
+               context_.Say(expr.source,
+diff --git a/flang/test/Semantics/OpenMP/omp-atomic-user-defined-operators.f90 b/flang/test/Semantics/OpenMP/omp-atomic-user-defined-operators.f90
+new file mode 100644
+--- /dev/null
++++ b/flang/test/Semantics/OpenMP/omp-atomic-user-defined-operators.f90
+@@ -0,0 +1,57 @@
++! RUN: %python %S/../test_errors.py %s %flang_fc1 -fopenmp
++! Semantics checks on user defined operators on atomic update statement
++
++module overload_asterisk
++    implicit none
++    private
++    public operator (*)
++
++    interface operator(*)
++        module procedure logical_and
++    end interface
++
++contains
++    pure logical function logical_and(log1, log2)
++        logical, intent(in) :: log1, log2
++
++        logical_and = (log1 .and. log2)
++    end function
++end module
++
++module new_operator
++    implicit none
++    private
++    public operator(.MYOPERATOR.)
++
++    interface operator(.MYOPERATOR.)
++       module procedure myprocedure
++    end interface
++contains
++    pure integer function myprocedure(param1, param2)
++        integer, intent(in) :: param1, param2
++        myprocedure = param1 + param2
++    end function
++end module
++
++program sample
++    use omp_lib
++    use overload_asterisk
++    use new_operator
++    implicit none
++
++    logical  :: T = .true., F = .false.
++    integer :: x, y 
++    !$omp atomic
++        T = T*T
++    
++    !$omp atomic update
++        x = x / y
++     
++    !$omp atomic update
++    !ERROR: User defined operator not allowed in OpenMP ATOMIC (UPDATE) statement
++        x = x .MYOPERATOR. y
++
++    !$omp atomic
++    !ERROR: User defined operator not allowed in OpenMP ATOMIC (UPDATE) statement
++        x = x .MYOPERATOR. y
++end program
+
